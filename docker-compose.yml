@@ -1,0 +1,88 @@
+services:
+# MYSQL container
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    healthcheck:  
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    ports:
+      - "3306:3306"
+    volumes: 
+      - mysql-data:/var/lib/mysql
+    networks:
+      - bankapp-nw 
+# BANKAPP container
+  bankapp:
+    build: .
+    restart: on-failure
+    container_name: bankapp
+    ports:
+      - "8080:8080"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      OLLAMA_URL: ${OLLAMA_URL}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ollama-pull-model:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - bankapp-nw
+# OLLAMA container     
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    container_name: ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bankapp-nw
+
+  ollama-pull-model:
+    image: ollama/ollama
+    restart: on-failure
+    container_name: ollama-pull-model
+    environment:
+      - OLLAMA_HOST=ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: -c "ollama pull tinyllama"
+    networks:
+      - bankapp-nw
+
+networks:
+  bankapp-nw:
+    driver: bridge
+volumes:
+  mysql-data:
+  ollama-data:
